@@ -4,26 +4,20 @@ import psutil
 import os
 from dotenv import load_dotenv
 
+# Memuat variabel dari file .env
 load_dotenv()
+TOKEN = os.getenv('DISCORD_TOKEN')
 
-# --- KONFIGURASI ---
-TOKEN = os.getenv('TOKEN_BOT')
 # Interval pembaruan status dalam detik
-UPDATE_INTERVAL_SECONDS = 2
+UPDATE_INTERVAL_SECONDS = 5
 
-# --- LOGIKA BOT ---
+# --- PENGATURAN INTENTS ---
+# Ini sangat penting. Tanpa ini, banyak hal tidak akan berfungsi dengan benar.
 intents = discord.Intents.default()
+# Jika Anda berencana menambahkan fitur lain di masa depan, Anda mungkin perlu menambahkan intents lain,
+# intents.messages = True
+
 bot = discord.Client(intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f'Bot telah login sebagai {bot.user}')
-
-# Pastikan Anda menjalankan bot dengan variabel TOKEN
-if TOKEN is None:
-    print("Error: DISCORD_TOKEN tidak ditemukan di file .env")
-else:
-    bot.run(TOKEN)
 
 # Variabel untuk melacak status mana yang akan ditampilkan
 show_cpu_status = True
@@ -32,35 +26,47 @@ show_cpu_status = True
 async def update_presence():
     """Tugas berulang untuk memperbarui status aktivitas bot."""
     global show_cpu_status
-    await bot.wait_until_ready()
-
-    activity_text = ""
-    if show_cpu_status:
-        # Ambil dan format data CPU
-        cpu_percent = psutil.cpu_percent()
-        activity_text = f"CPU {cpu_percent}%"
-    else:
-        # Ambil dan format data RAM
-        ram_percent = psutil.virtual_memory().percent
-        activity_text = f"RAM {ram_percent}%"
-
-    # Buat objek aktivitas baru
-    activity = discord.Game(name=activity_text)
     
-    # Ubah status bot
-    await bot.change_presence(activity=activity)
+    # Tambahkan print untuk memastikan loop ini berjalan
+    print("DEBUG: Loop 'update_presence' sedang berjalan...")
+    
+    try:
+        activity_text = ""
+        if show_cpu_status:
+            cpu_percent = psutil.cpu_percent()
+            activity_text = f"CPU {cpu_percent}%"
+        else:
+            ram_percent = psutil.virtual_memory().percent
+            activity_text = f"RAM {ram_percent}%"
 
-    # Ganti toggle untuk tampilan berikutnya
-    show_cpu_status = not show_cpu_status
+        # Buat objek aktivitas baru
+        activity = discord.Game(name=activity_text)
+        
+        # Ubah status bot
+        await bot.change_presence(activity=activity)
+        print(f"DEBUG: Status berhasil diubah menjadi -> {activity_text}")
+
+        # Ganti toggle untuk tampilan berikutnya
+        show_cpu_status = not show_cpu_status
+    except Exception as e:
+        print(f"ERROR di dalam loop: {e}")
+
 
 @bot.event
 async def on_ready():
     """Fungsi yang berjalan saat bot berhasil online."""
     print(f'Bot telah login sebagai {bot.user}')
-    print('Memulai pembaruan status otomatis...')
+    print("-" * 20)
+    
     # Memulai loop jika belum berjalan
     if not update_presence.is_running():
+        print("DEBUG: Memulai loop 'update_presence'...")
         update_presence.start()
+    else:
+        print("DEBUG: Loop 'update_presence' sudah berjalan.")
 
-# Menjalankan bot dengan token Anda
-bot.run(TOKEN)
+# Menjalankan bot
+if TOKEN:
+    bot.run(TOKEN)
+else:
+    print("ERROR: Token tidak ditemukan. Pastikan file .env sudah benar.")
