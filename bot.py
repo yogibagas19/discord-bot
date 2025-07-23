@@ -27,8 +27,6 @@ intents.message_content = True
 intents.presences = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-bot = discord.Client(intents=intents)
-
 @tasks.loop(seconds=UPDATE_INTERVAL_SECONDS)
 async def update_presence():
     """Tugas berulang untuk memperbarui status aktivitas bot."""
@@ -61,7 +59,7 @@ async def on_ready():
         update_presence.start()
 
 # --- Perintah !add untuk Torrent ---
-@bot.commands(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
+@bot.command(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
 async def add_torrent(ctx, *, magnet_link: str = None):
     """
     Menambahkan unduhan baru ke qBittorrent.
