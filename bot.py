@@ -23,7 +23,7 @@ QBIT_USERNAME = os.getenv('QBIT_USERNAME')
 QBIT_PASSWORD = os.getenv('QBIT_PASSWORD')
 BASE_DOWNLOAD_PATH = os.getenv('PATH')
 PUBLIC_IP_OR_DOMAIN = os.getenv('PUBLIC_IP')
-NGINX_DOWNLOAD_DIR = os.getenv('PATH')
+NGINX_DOWNLOAD_DIR = os.getenv('NGINX_DOWNLOAD_DIR')
 
 # Mengatur intents yang diperlukan
 intents = discord.Intents.default()
