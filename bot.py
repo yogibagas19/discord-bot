@@ -61,7 +61,7 @@ async def on_ready():
         update_presence.start()
 
 # --- Perintah !add untuk Torrent ---
-@bot.command(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
+@bot.commands(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
 async def add_torrent(ctx, *, magnet_link: str = None):
     """
     Menambahkan unduhan baru ke qBittorrent.
