@@ -60,13 +60,11 @@ async def on_ready():
         update_presence.start()
 
 # --- Perintah !add untuk Torrent ---
-@bot.command(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
-async def add_torrent(ctx, save_category: str = None,*, magnet_link: str = None):
+@bot.command(name='add', help='Menambahkan torrent ke path tertentu. Cth: !add movies [link]')
+async def add_torrent(ctx, save_category: str = None, *, magnet_link: str = None):
     """
-    Menambahkan unduhan baru ke qBittorrent.
-    Bisa dari magnet link atau file .torrent yang diunggah.
+    Menambahkan unduhan baru ke qBittorrent dengan path dinamis (misal: /mnt/movies).
     """
-
     if not save_category:
         await ctx.send("⚠️ **Path dibutuhkan!**\nGunakan format: `!add [kategori] [magnet_link]`\nContoh: `!add movies <link>` atau `!add shows` sambil unggah file.")
         return
@@ -80,48 +78,42 @@ async def add_torrent(ctx, save_category: str = None,*, magnet_link: str = None)
     if not os.path.realpath(full_save_path).startswith(os.path.realpath(BASE_DOWNLOAD_PATH)):
         await ctx.send("❌ **Error Keamanan!** Kategori path tidak valid.")
         return
+
     # Inisialisasi koneksi ke qBittorrent
     qbt_client = qbittorrentapi.Client(
-        host=QBIT_HOST,
-        port=QBIT_PORT,
-        username=QBIT_USERNAME,
-        password=QBIT_PASSWORD
+        host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD
     )
-
     try:
-        # Coba login untuk memverifikasi koneksi
-        await ctx.send("⏳ Menghubungi qBittorrent...", delete_after=5)
+        await ctx.send(f"⏳ Menghubungi qBittorrent untuk menyimpan di `{full_save_path}`...", delete_after=10)
         qbt_client.auth_log_in()
-    except qbittorrentapi.LoginFailed as e:
-        await ctx.send("❌ **Login Gagal!** Periksa kembali host, port, username, dan password qBittorrent Anda.")
+    except qbittorrentapi.LoginFailed:
+        await ctx.send("❌ **Login Gagal!** Periksa kembali kredensial qBittorrent Anda.")
         return
     except Exception as e:
-        await ctx.send(f"❌ **Tidak bisa terhubung ke qBittorrent!** Pastikan qbittorrent-nox berjalan dan Web UI aktif. Error: {e}")
+        await ctx.send(f"❌ **Tidak bisa terhubung ke qBittorrent!** Pastikan layanan berjalan. Error: {e}")
         return
-    
+
+    # Opsi unduhan, termasuk path dan aturan seeding
     download_options = {
         'save_path': full_save_path,
         'ratio_limit': 0,
         'seeding_time_limit': 0
     }
 
-
     # Kasus 1: Pengguna mengunggah file .torrent
     if ctx.message.attachments:
         attachment = ctx.message.attachments[0]
         if attachment.filename.endswith('.torrent'):
             try:
-                # Mengunduh konten file torrent dari Discord
                 async with aiohttp.ClientSession() as session:
                     async with session.get(attachment.url) as resp:
                         if resp.status == 200:
                             torrent_file_content = await resp.read()
-                            # Menambahkan torrent dari file
-                            result = qbt_client.torrents_add(torrent_files=torrent_file_content)
+                            result = qbt_client.torrents_add(torrent_files=torrent_file_content, **download_options)
                             if result == "Ok.":
-                                await ctx.send(f"✅ **Berhasil!** File `{attachment.filename}` telah ditambahkan ke antrean unduhan.")
+                                await ctx.send(f"✅ **Berhasil!** File `{attachment.filename}` ditambahkan ke `{full_save_path}`.")
                             else:
-                                await ctx.send(f"⚠️ Gagal menambahkan torrent. qBittorrent merespons: `{result}`")
+                                await ctx.send(f"⚠️ Gagal menambahkan. Respons: `{result}`")
                         else:
                             await ctx.send("❌ Gagal mengunduh file `.torrent` dari Discord.")
                 return
@@ -132,17 +124,16 @@ async def add_torrent(ctx, save_category: str = None,*, magnet_link: str = None)
     # Kasus 2: Pengguna memberikan magnet link
     if magnet_link and magnet_link.startswith('magnet:'):
         try:
-            result = qbt_client.torrents_add(urls=magnet_link)
+            result = qbt_client.torrents_add(urls=magnet_link, **download_options)
             if result == "Ok.":
-                await ctx.send("✅ **Berhasil!** Magnet link telah ditambahkan ke antrean unduhan.")
+                await ctx.send(f"✅ **Berhasil!** Magnet link ditambahkan ke `{full_save_path}`.")
             else:
-                await ctx.send(f"⚠️ Gagal menambahkan torrent. qBittorrent merespons: `{result}`")
+                await ctx.send(f"⚠️ Gagal menambahkan. Respons: `{result}`")
         except Exception as e:
             await ctx.send(f"❌ Terjadi kesalahan saat menambahkan magnet link: {e}")
         return
 
-    # Jika tidak ada input yang valid
-    await ctx.send("⚠️ **Perintah tidak valid.**\nGunakan `!add [magnet link]` atau unggah file `.torrent` bersamaan dengan perintah `!add`.")
+    await ctx.send(f"⚠️ **Link atau file tidak ditemukan.**\nPastikan Anda menyertakan magnet link setelah kategori, atau unggah file `.torrent` bersamaan dengan perintah `!add {save_category}`.")
 
 # Menjalankan bot
 if TOKEN:
