@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import platform
 import qbittorrentapi
 import aiohttp
+import secrets
+from urllib.parse import quote
 
 # Memuat variabel dari file .env
 load_dotenv()
@@ -19,7 +21,9 @@ QBIT_PORT = os.getenv("QBIT_PORT")
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 QBIT_USERNAME = os.getenv('QBIT_USERNAME')
 QBIT_PASSWORD = os.getenv('QBIT_PASSWORD')
-BASE_DOWNLOAD_PATH = '/mnt/volume_sgp1_01/media'
+BASE_DOWNLOAD_PATH = os.getenv('PATH')
+PUBLIC_IP_OR_DOMAIN = os.getenv('PUBLIC_IP')
+NGINX_DOWNLOAD_DIR = os.getenv('PATH')
 
 # Mengatur intents yang diperlukan
 intents = discord.Intents.default()
@@ -134,6 +138,109 @@ async def add_torrent(ctx, save_category: str = None, *, magnet_link: str = None
         return
 
     await ctx.send(f"⚠️ **Link atau file tidak ditemukan.**\nPastikan Anda menyertakan magnet link setelah kategori, atau unggah file `.torrent` bersamaan dengan perintah `!add {save_category}`.")
+
+# Fungsi bantuan untuk membersihkan symlink lama
+def clear_symlinks(directory):
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.islink(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(f"Gagal menghapus symlink {file_path}: {e}")
+
+
+# --- Perintah !list untuk melihat file ---
+@bot.command(name='list', help='Melihat daftar torrent yang sudah selesai.')
+async def list_torrents(ctx):
+    qbt_client = qbittorrentapi.Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+    try:
+        qbt_client.auth_log_in()
+        
+        # Ambil hanya torrent yang sudah selesai (state 'uploading' atau 'pausedUP')
+        completed_torrents = [t for t in qbt_client.torrents_info() if t.state in ['uploading', 'pausedUP']]
+        
+        if not completed_torrents:
+            await ctx.send("Tidak ada torrent yang selesai diunduh.")
+            return
+
+        embed = discord.Embed(title="✅ Torrent Selesai", color=discord.Color.green())
+        
+        response_text = ""
+        for t in completed_torrents:
+            response_text += f"**Nama:** `{t.name}`\n"
+            response_text += f"**Hash:** `{t.hash}`\n"
+            response_text += "----------\n"
+        
+        # Batasi panjang pesan agar tidak melebihi limit Discord
+        if len(response_text) > 4000:
+            response_text = response_text[:4000] + "\n... (dan lainnya)"
+
+        embed.description = response_text
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"❌ Terjadi kesalahan: {e}")
+
+
+# --- Perintah !get untuk mengunduh file ---
+@bot.command(name='get', help='Mendapatkan link unduh. Cth: !get <hash> <nomor_file>')
+async def get_file_link(ctx, torrent_hash: str, file_index: int):
+    qbt_client = qbittorrentapi.Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+    try:
+        qbt_client.auth_log_in()
+        
+        # 1. Dapatkan daftar file untuk torrent yang diminta
+        files = qbt_client.torrents_files(torrent_hash=torrent_hash)
+        if not files:
+            await ctx.send("❌ Hash torrent tidak ditemukan atau tidak memiliki file.")
+            return
+
+        # 2. Tampilkan daftar file jika nomor file tidak valid
+        if not (0 <= file_index < len(files)):
+            file_list_text = "Nomor file tidak valid. Pilih salah satu dari daftar ini:\n"
+            for i, f in enumerate(files):
+                file_list_text += f"`{i}`: `{os.path.basename(f.name)}`\n"
+            await ctx.send(file_list_text)
+            return
+        
+        selected_file = files[file_index]
+        # Mendapatkan path lengkap dari torrent (save_path + nama file)
+        torrent_info = qbt_client.torrents_info(torrent_hashes=torrent_hash)[0]
+        original_file_path = os.path.join(torrent_info.save_path, selected_file.name)
+
+        if not os.path.exists(original_file_path):
+            await ctx.send(f"❌ File tidak ditemukan di path: `{original_file_path}`")
+            return
+
+        # 3. Bersihkan symlink lama untuk keamanan
+        clear_symlinks(NGINX_DOWNLOAD_DIR)
+
+        # 4. Buat symlink baru dengan nama acak
+        random_token = secrets.token_urlsafe(16)
+        # Ambil ekstensi file asli
+        file_extension = os.path.splitext(original_file_path)[1]
+        symlink_filename = f"{random_token}{file_extension}"
+        symlink_path = os.path.join(NGINX_DOWNLOAD_DIR, symlink_filename)
+        
+        os.symlink(original_file_path, symlink_path)
+
+        # 5. Buat dan kirim URL unduhan
+        # quote() akan menangani spasi atau karakter spesial di nama file
+        download_url = f"http://{PUBLIC_IP_OR_DOMAIN}/{quote(symlink_filename)}"
+        
+        embed = discord.Embed(
+            title="🔗 Link Unduhan Anda Siap!",
+            description=f"File: `{os.path.basename(original_file_path)}`",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Klik untuk Mengunduh", value=download_url)
+        embed.set_footer(text="Link ini bersifat sementara. Link akan diganti saat ada permintaan baru.")
+        
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"❌ Terjadi kesalahan: {e}")
 
 # Menjalankan bot
 if TOKEN:
