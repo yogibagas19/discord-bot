@@ -19,6 +19,7 @@ QBIT_PORT = os.getenv("QBIT_PORT")
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 QBIT_USERNAME = os.getenv('QBIT_USERNAME')
 QBIT_PASSWORD = os.getenv('QBIT_PASSWORD')
+BASE_DOWNLOAD_PATH = '/mnt/volume_sgp1_01/media'
 
 # Mengatur intents yang diperlukan
 intents = discord.Intents.default()
@@ -60,11 +61,25 @@ async def on_ready():
 
 # --- Perintah !add untuk Torrent ---
 @bot.command(name='add', help='Menambahkan torrent baru via magnet link atau file .torrent.')
-async def add_torrent(ctx, *, magnet_link: str = None):
+async def add_torrent(ctx, save_category: str = None,*, magnet_link: str = None):
     """
     Menambahkan unduhan baru ke qBittorrent.
     Bisa dari magnet link atau file .torrent yang diunggah.
     """
+
+    if not save_category:
+        await ctx.send("⚠️ **Path dibutuhkan!**\nGunakan format: `!add [kategori] [magnet_link]`\nContoh: `!add movies <link>` atau `!add shows` sambil unggah file.")
+        return
+
+    # --- Validasi Path untuk Keamanan ---
+    # Menggabungkan path dasar dengan kategori yang diberikan
+    full_save_path = os.path.join(BASE_DOWNLOAD_PATH, save_category)
+    
+    # Mencegah serangan Directory Traversal (e.g., !add ../../etc)
+    # Memastikan path absolut yang dituju benar-benar berada di dalam BASE_DOWNLOAD_PATH
+    if not os.path.realpath(full_save_path).startswith(os.path.realpath(BASE_DOWNLOAD_PATH)):
+        await ctx.send("❌ **Error Keamanan!** Kategori path tidak valid.")
+        return
     # Inisialisasi koneksi ke qBittorrent
     qbt_client = qbittorrentapi.Client(
         host=QBIT_HOST,
@@ -83,6 +98,13 @@ async def add_torrent(ctx, *, magnet_link: str = None):
     except Exception as e:
         await ctx.send(f"❌ **Tidak bisa terhubung ke qBittorrent!** Pastikan qbittorrent-nox berjalan dan Web UI aktif. Error: {e}")
         return
+    
+    download_options = {
+        'save_path': full_save_path,
+        'ratio_limit': 0,
+        'seeding_time_limit': 0
+    }
+
 
     # Kasus 1: Pengguna mengunggah file .torrent
     if ctx.message.attachments:
